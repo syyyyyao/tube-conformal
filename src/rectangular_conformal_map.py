@@ -63,41 +63,41 @@ def rectangular_conformal_map(v: np.ndarray, f: np.ndarray, corner: np.ndarray) 
     bx = np.zeros(nv, dtype=float)
     by = np.zeros(nv, dtype=float)
 
-    bottom = bd_index[corner1 : corner2 + 1]
-    right = bd_index[corner2 : corner3 + 1]
-    top = bd_index[corner3 : corner4 + 1]
-    left = np.concatenate([bd_index[corner4:], bd_index[: corner1 + 1]])
+    left = bd_index[corner1 : corner2 + 1]
+    top = bd_index[corner2 : corner3 + 1]
+    right = bd_index[corner3 : corner4 + 1]
+    bottom = np.concatenate([bd_index[corner4:], bd_index[: corner1 + 1]])
 
-    if len(bottom) != len(top):
-        raise RuntimeError("Top and bottom boundary segments must have equal length")
+    if len(left) != len(right):
+        raise RuntimeError("Left and right boundary segments must have equal length")
     
-    ay[bottom, :] = 0
-    for r, b, t in zip(bottom, bottom, top[::-1]):
+    ay[left, :] = 0
+    for r, b, t in zip(left, left, right[::-1]):
         ay[r, b] += 1
         ay[r, t] += -1
 
 
-    x_fixed = np.unique(np.concatenate([top, bottom]))
+    x_fixed = np.unique(np.concatenate([left, right]))
     ax[x_fixed, :] = 0
     ax[x_fixed, x_fixed] = 1
-    bx[top] = 2.0 * np.pi
+    bx[right] = 2.0 * np.pi
     rec_x = spsolve(ax.tocsr(), bx)
 
-    y_fixed = np.unique(np.concatenate([left, right]))
+    y_fixed = np.unique(np.concatenate([top, bottom]))
     ay[y_fixed, :] = 0
     ay[y_fixed, y_fixed] = 1
 
 
     def objective(x_len):
         by = np.zeros(nv, dtype=float)
-        by[right] = x_len
+        by[top] = x_len
         rec_y = spsolve(ay.tocsr(), by)
         rec = np.column_stack([rec_x, rec_y])
 
         return np.sum(np.abs(beltrami_coefficient(rec, f, v)) ** 2)
 
     by_opt = minimize_scalar(objective, method="Bounded", bounds=(0,10)).x
-    by[right] = by_opt
+    by[top] = by_opt
     rec_y_opt = spsolve(ay.tocsr(), by)
 
     return np.column_stack([rec_x, rec_y_opt])
