@@ -7,16 +7,19 @@ from .meshboundaries import meshboundaries
 
 _LAYER_DECAY = 0.85
 _MAX_STEP_RETRIES = 8
-_SMOOTH_DATA_WEIGHT = 1.0
 _SMOOTH_RING_WEIGHT = 0.25
-_SMOOTH_ANCHOR_WEIGHT = 0.1
 _NORMAL_BLEND = 0.15
 _INTERSECTION_EPS = 1e-8
 _FACE_AREA_EPS = 1e-14
 _PLANAR_REL_TOL = 1e-8
 
 
-def extend_mesh(v: np.ndarray, f: np.ndarray, n_layers: int) -> tuple[np.ndarray, np.ndarray]:
+def extend_mesh(
+    v: np.ndarray,
+    f: np.ndarray,
+    n_layers: int,
+    smooth_ring_weight: float = _SMOOTH_RING_WEIGHT,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Extend a manifold annulus mesh by adding n_layers of strips on both boundaries.
 
@@ -34,6 +37,8 @@ def extend_mesh(v: np.ndarray, f: np.ndarray, n_layers: int) -> tuple[np.ndarray
         raise ValueError("v must have shape (nv, 2) or (nv, 3)")
     if n_layers < 1:
         raise ValueError("n_layers must be >= 1")
+    if smooth_ring_weight < 0.0:
+        raise ValueError("smooth_ring_weight must be >= 0")
 
     if input_dim == 2:
         # Keep the 2D API while using the same 3D geometric predicates internally.
@@ -70,7 +75,7 @@ def extend_mesh(v: np.ndarray, f: np.ndarray, n_layers: int) -> tuple[np.ndarray
             for retry in range(_MAX_STEP_RETRIES):
                 steps = base_steps * (0.5**retry)
                 ring_raw = v_work[current_ring] + directions * steps[:, None]
-                ring_smoothed = _smooth_ring(ring_raw, v_work[current_ring], directions, steps)
+                ring_smoothed = _smooth_ring(ring_raw, smooth_ring_weight)
                 if planar_mode:
                     ring_smoothed = _project_to_plane(ring_smoothed, plane_origin, plane_normal)
 
@@ -194,24 +199,18 @@ def _outward_directions_and_steps(
 
 def _smooth_ring(
     ring_raw: np.ndarray,
-    ring_prev: np.ndarray,
-    directions: np.ndarray,
-    steps: np.ndarray,
+    smooth_ring_weight: float,
 ) -> np.ndarray:
     n = len(ring_raw)
-    if n < 3:
+    if n < 3 or smooth_ring_weight == 0.0:
         return ring_raw
 
     lap = _cycle_laplacian(n)
-    lhs = (_SMOOTH_DATA_WEIGHT + _SMOOTH_ANCHOR_WEIGHT) * sparse.eye(n, format="csr")
-    lhs = (lhs + _SMOOTH_RING_WEIGHT * lap).tocsc()
-
-    anchor = ring_prev + directions * steps[:, None]
-    rhs = _SMOOTH_DATA_WEIGHT * ring_raw + _SMOOTH_ANCHOR_WEIGHT * anchor
+    lhs = (sparse.eye(n, format="csr") + smooth_ring_weight * lap).tocsc()
 
     out = np.empty_like(ring_raw)
     for dim in range(3):
-        out[:, dim] = spsolve(lhs, rhs[:, dim])
+        out[:, dim] = spsolve(lhs, ring_raw[:, dim])
     return out
 
 
