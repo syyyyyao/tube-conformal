@@ -5,15 +5,16 @@ from scipy.sparse.linalg import spsolve
 from .meshboundaries import meshboundaries
 
 def ring_smooth(v_raw: np.ndarray, f_ext: np.ndarray, smooth_weight: float) -> np.ndarray:
+    # check smooth weight
+    if smooth_weight == 0.0:
+        return v_raw
+    
     boundary_loops = meshboundaries(f_ext)
     v_smoothed = v_raw.copy()
     
     for boundary in boundary_loops:
         ring_raw = v_raw[boundary]
         n = len(ring_raw)
-        # check number of rings and smooth weight
-        if n < 3 or smooth_weight == 0.0:
-            return ring_raw
         
         # ring smoothing
         cyc_laplacian = _cycle_laplacian(n)
