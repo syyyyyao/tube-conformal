@@ -19,8 +19,6 @@ def tube_conformal_map(
     seam at theta = 0 / 2*pi. Outside the strips, the input tube map is
     preserved.
     """
-    if seam_strip_width <= 0.0 or seam_strip_width > 0.5:
-        raise ValueError("seam_strip_width must be in the interval (0, 0.5]")
 
     # get boundaries
     boundary_loops = meshboundaries(f)
@@ -39,10 +37,7 @@ def tube_conformal_map(
     if not np.any(strip_face_mask):
         return tube0
     
-    local_vertices, local_faces = np.unique(
-        f[strip_face_mask].reshape(-1),
-        return_inverse=True,
-    )
+    local_vertices, local_faces = np.unique(f[strip_face_mask].reshape(-1), return_inverse=True)
     local_faces = local_faces.reshape(-1, 3)
 
     if len(local_vertices) == 0 or len(local_faces) == 0:
