@@ -8,7 +8,7 @@ from src import initial_tube, tube_conformal_map, raw_extension, ring_smooth, co
 
 def main():
     print("Running benchmark for fixed boundary correction...")
-    run_benchmark_fixed()
+    # run_benchmark_fixed()
     print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
 
     print("Running benchmark for smoothed weight...")
@@ -16,15 +16,15 @@ def main():
     print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
 
     print("Running benchmark for extension layers...")
-    run_benchmark_extension_layers()
+    # run_benchmark_extension_layers()
     print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
 
     print("Running benchmark for major conformal bending...")
-    run_benchmark_conformal_bend_major()
+    # run_benchmark_conformal_bend_major()
     print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
 
     print("Running benchmark for minor conformal bending...")
-    run_benchmark_conformal_bend_minor()
+    # run_benchmark_conformal_bend_minor()
     print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
 
 
@@ -80,8 +80,9 @@ def run_benchmark_smoothed_weight():
             v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
 
             v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
-            tube0_raw = initial_tube(v, f)
-            tube_raw = tube_conformal_map(tube0_raw, f, v, seam_strip_width=0.05)
+            tube0_ext_raw = initial_tube(v_ext_raw, f_ext)
+            tube_ext_raw = tube_conformal_map(tube0_ext_raw, f_ext, v_ext_raw, seam_strip_width=0.05)
+            tube_raw = tube_ext_raw[:len(v)]
             dist_raw = np.mean(np.abs(_angular_distortion(v, f, tube_raw)))
 
             row = [filepath.name, dist_raw]
@@ -215,7 +216,6 @@ def run_benchmark_conformal_bend_minor():
     return None
 
 
-
 def _angular_distortion(v: np.ndarray, f: np.ndarray, vmap: np.ndarray) -> np.ndarray:
     """
     Compute the angle distortion (in degree) of a mapping.
@@ -282,7 +282,6 @@ def _angular_distortion(v: np.ndarray, f: np.ndarray, vmap: np.ndarray) -> np.nd
     angular_distortion = np.hstack((np.arccos(mapcos1) - np.arccos(vcos1), np.arccos(mapcos2) - np.arccos(vcos2), np.arccos(mapcos3) - np.arccos(vcos3))) * 180 / np.pi
 
     return angular_distortion
-
 
 
 if __name__ == "__main__":
