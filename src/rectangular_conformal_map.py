@@ -1,5 +1,4 @@
 import numpy as np
-import trimesh
 import networkx as nx
 from scipy.sparse.linalg import spsolve
 from scipy.optimize import minimize_scalar

@@ -21,7 +21,7 @@ def raw_extension(v: np.ndarray, f: np.ndarray, normal_blend: float) -> tuple[np
     # extension on each boundary loop
     for boundary in boundary_loops:
         directions, steps = _outward_directions_and_steps(v_raw, f_ext, boundary, normal_blend) # get directions and step sizes
-        ring_raw = v_raw[boundary] + directions * steps.reshape(-1, 1) # compute raw ring positions
+        ring_raw = v_raw[boundary] + directions * np.mean(steps) # compute raw ring positions
 
         # get new vertex and connectivity
         new_start = len(v_raw)
@@ -59,13 +59,13 @@ def _outward_directions_and_steps(
         tan_norm = np.linalg.norm(tangent)
         tangent = tangent / tan_norm
 
-        # check interior points
+        # compute inward direction and step sizes
         interior_neighbors = [n for n in adjacency[int(vid)] if n not in ring]
-        if not interior_neighbors:
-            raise RuntimeError(f"Boundary vertex {int(vid)} has no interior neighbor")
-        
-        # compute inward direction
-        interior_pts = v[interior_neighbors]
+        if interior_neighbors:
+            interior_pts = v[interior_neighbors]
+        else:
+            interior_pts = v[[prev_vid, next_vid]]
+
         inward = (interior_pts - v[int(vid)]).mean(axis=0)
         inward_norm = np.linalg.norm(inward)
         inward_units[i] = inward / inward_norm

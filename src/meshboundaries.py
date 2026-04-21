@@ -8,7 +8,7 @@ import numpy as np
 def meshboundaries(f: np.ndarray) -> list[np.ndarray]:
     """
     Extract ordered boundary loops from a triangular mesh.
-    Returns a list of loops sorted by descending length and the first loop as outer boundary.
+    Returns a list of loops sorted by descending length.
     """
     faces = np.asarray(f, dtype=np.int64)
     if faces.ndim != 2 or faces.shape[1] != 3:

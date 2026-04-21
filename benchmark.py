@@ -8,29 +8,32 @@ from src import initial_tube, tube_conformal_map, raw_extension, ring_smooth, co
 
 def main():
     print("Running benchmark for fixed boundary correction...")
-    # run_benchmark_fixed()
-    print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
+    run_benchmark_fixed()
+    print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
 
     print("Running benchmark for smoothed weight...")
     run_benchmark_smoothed_weight()
-    print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
+    print("Benchmark completed. Results saved to 'benchmark_results/free_results'.\n")
 
     print("Running benchmark for extension layers...")
-    # run_benchmark_extension_layers()
-    print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
+    run_benchmark_extension_layers()
+    print("Benchmark completed. Results saved to 'benchmark_results/free_results'.\n")
 
     print("Running benchmark for major conformal bending...")
-    # run_benchmark_conformal_bend_major()
-    print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
+    run_benchmark_conformal_bend_major()
+    print("Benchmark completed. Results saved to 'benchmark_results/conformal_bend_results'.\n")
 
     print("Running benchmark for minor conformal bending...")
-    # run_benchmark_conformal_bend_minor()
-    print("Benchmark completed. Results saved to benchmark_results/ directory.\n")
+    run_benchmark_conformal_bend_minor()
+    print("Benchmark completed. Results saved to 'benchmark_results/conformal_bend_results'.\n")
 
+    print("Running benchmark for computation time...")
+    run_benchmark_computation_time()
+    print("Benchmark completed. Results saved to ‘benchmark_results/computation_time_results’.\n")
 
 
 def run_benchmark_fixed():
-    out_dir = Path('benchmark_results')
+    out_dir = Path('benchmark_results/fixed_results')
     out_dir.mkdir(exist_ok=True)
     seam_strip_widths = [0.05, 0.25, 0.45, 0.65, 0.85, 1.0]
     header = ['name', 'init'] + [f'width={w}' for w in seam_strip_widths]
@@ -61,9 +64,11 @@ def run_benchmark_fixed():
             writer.writerow(header)
             writer.writerows(results)
 
+    return None
+
 
 def run_benchmark_smoothed_weight():
-    out_dir = Path('benchmark_results')
+    out_dir = Path('benchmark_results/free_results')
     out_dir.mkdir(exist_ok=True)
     smooth_weights = [0.05, 0.1, 0.25, 0.5]
     header = ['name', 'raw'] + [f'weight={w}' for w in smooth_weights]
@@ -104,7 +109,7 @@ def run_benchmark_smoothed_weight():
 
 
 def run_benchmark_extension_layers():
-    out_dir = Path('benchmark_results')
+    out_dir = Path('benchmark_results/free_results')
     out_dir.mkdir(exist_ok=True)
     max_layers = 3
     header = ['name'] + [f'layers={m}' for m in range(1, max_layers+1)]
@@ -141,9 +146,9 @@ def run_benchmark_extension_layers():
 
 
 def run_benchmark_conformal_bend_major():
-    out_dir = Path('benchmark_results')
+    out_dir = Path('benchmark_results/conformal_bend_results')
     out_dir.mkdir(exist_ok=True)
-    major_ratios = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+    major_ratios = [0.01, 0.1, 0.20, 0.40, 0.60, 0.80, 0.99]
     header = ['name', 'tube'] + [f'ratio={a}' for a in major_ratios]
 
     for data_type in ['synthetic', 'real']:
@@ -179,9 +184,9 @@ def run_benchmark_conformal_bend_major():
 
 
 def run_benchmark_conformal_bend_minor():
-    out_dir = Path('benchmark_results')
+    out_dir = Path('benchmark_results/conformal_bend_results')
     out_dir.mkdir(exist_ok=True)
-    minor_ratios = [1.1, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
+    minor_ratios = [1.01, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
     header = ['name', 'tube'] + [f'ratio={a}' for a in minor_ratios]
 
     for data_type in ['synthetic', 'real']:
@@ -213,6 +218,62 @@ def run_benchmark_conformal_bend_minor():
             writer.writerow(header)
             writer.writerows(results)
             
+    return None
+
+
+def run_benchmark_computation_time():
+    out_dir = Path('benchmark_results/computation_time_results')
+    out_dir.mkdir(exist_ok=True)
+    header = ['name', 'vertices', 'faces', 'total time', 'raw_ext_time', 'smooth_time', 'init_time', 'correction_time', 'restriction_time', 'bend_major_time', 'bend_minor_time']
+
+    for data_type in ['synthetic', 'real']:
+        files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
+        results = []
+        n = 0
+
+        for filepath in files:
+            n = n + 1
+            print(f"Processing {filepath} ({n}/{len(files)})...")
+            mesh = trimesh.load(filepath)
+            v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
+            num_v = v.shape[0]
+            num_f = f.shape[0]
+
+            time0 = time.time()
+            v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
+            time1 = time.time()
+            v_ext = ring_smooth(v_ext_raw, f_ext, smooth_weight=0.5)
+            time2 = time.time()
+            tube0_ext = initial_tube(v_ext, f_ext)
+            time3 = time.time()
+            tube_ext = tube_conformal_map(tube0_ext, f_ext, v_ext)
+            time4 = time.time()
+            tube_free = tube_ext[:len(v)]
+            time5 = time.time()
+            R_max = np.sqrt(1 + (2*np.pi / (np.max(tube_free[:,2]) - np.min(tube_free[:,2])))**2)
+            bent_major = conformal_bend_major(tube_free, 0.5*R_max + 0.5)
+            time6 = time.time()
+            R_min = np.sqrt(1 + ((np.max(tube_free[:,2]) - np.min(tube_free[:,2]))/(2*np.pi))**2)
+            bent_minor = conformal_bend_minor(tube_free, 2*R_min)
+            time7 = time.time()
+
+            total_time = time7 - time0
+            time_raw_ext = time1 - time0
+            time_smooth = time2 - time1
+            time_init = time3 - time2
+            time_correction = time4 - time3
+            time_restric = time5 - time4
+            time_bend_major = time6 - time5
+            time_bend_minor = time7 - time6
+
+            row = [filepath.name, num_v, num_f, total_time, time_raw_ext, time_smooth, time_init, time_correction, time_restric, time_bend_major, time_bend_minor]
+            results.append(row)
+
+        with open(out_dir / f'{data_type}_computation_time_results.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(results)
+
     return None
 
 

@@ -9,6 +9,7 @@ def ring_smooth(v_raw: np.ndarray, f_ext: np.ndarray, smooth_weight: float) -> n
     if smooth_weight == 0.0:
         return v_raw
     
+    # initial set
     boundary_loops = meshboundaries(f_ext)
     v_smoothed = v_raw.copy()
     
@@ -26,6 +27,9 @@ def ring_smooth(v_raw: np.ndarray, f_ext: np.ndarray, smooth_weight: float) -> n
 
 
 def _cycle_laplacian(n: int) -> sparse.csr_matrix:
+    """
+    Construct the cycle graph Laplacian matrix of size n x n.
+    """
     ii = np.arange(n, dtype=np.int64)
     jj_prev = (ii - 1) % n
     jj_next = (ii + 1) % n
