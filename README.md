@@ -156,7 +156,7 @@ Applies conformal bending to a tubular map along the major or minor direction. `
 
 ## Citation
 
-Citation information will be added after the paper is available on arXiv.
+Submitted, 2026.
 
 ## License
 
