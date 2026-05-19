@@ -156,7 +156,9 @@ Applies conformal bending to a tubular map along the major or minor direction. `
 
 ## Citation
 
-"Shunyu Yao and Gary P. T. Choi, Conformal Tubular Parameterization and Toroidal Bending of Tube-Like Surfaces. Submitted, 2026"
+If you use this code, please cite:
+
+Shunyu Yao and Gary P. T. Choi, "Conformal tubular parameterization and toroidal bending of tube-like surfaces," arXiv preprint arXiv:2605.16305, 2026. https://arxiv.org/abs/2605.16305
 
 ## License
 
