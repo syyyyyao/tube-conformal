@@ -20,15 +20,15 @@ def main():
     print("Benchmark completed. Results saved to 'benchmark_results/free_results'.\n")
 
     print("Running benchmark for major conformal bending...")
-    run_benchmark_conformal_bend_major()
+    # run_benchmark_conformal_bend_major()
     print("Benchmark completed. Results saved to 'benchmark_results/conformal_bend_results'.\n")
 
     print("Running benchmark for minor conformal bending...")
-    run_benchmark_conformal_bend_minor()
+    # run_benchmark_conformal_bend_minor()
     print("Benchmark completed. Results saved to 'benchmark_results/conformal_bend_results'.\n")
 
     print("Running benchmark for computation time...")
-    run_benchmark_computation_time()
+    # run_benchmark_computation_time()
     print("Benchmark completed. Results saved to ‘benchmark_results/computation_time_results’.\n")
 
 
@@ -38,7 +38,7 @@ def run_benchmark_fixed():
     seam_strip_widths = [0.05, 0.25, 0.45, 0.65, 0.85, 1.0]
     header = ['name', 'init'] + [f'width={w}' for w in seam_strip_widths]
 
-    for data_type in ['synthetic', 'real']:
+    for data_type in ['synthetic', 'real_single', 'real_multi']:
         files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
         results = []
         n = 0
@@ -73,7 +73,7 @@ def run_benchmark_smoothed_weight():
     smooth_weights = [0.05, 0.1, 0.25, 0.5]
     header = ['name', 'raw'] + [f'weight={w}' for w in smooth_weights]
 
-    for data_type in ['synthetic', 'real']:
+    for data_type in ['synthetic', 'real_single', 'real_multi']:
         files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
         results = []
         n = 0
@@ -114,7 +114,7 @@ def run_benchmark_extension_layers():
     max_layers = 3
     header = ['name'] + [f'layers={m}' for m in range(1, max_layers+1)]
 
-    for data_type in ['synthetic', 'real']:
+    for data_type in ['synthetic', 'real_single', 'real_multi']:
         files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
         results = []
         n = 0
@@ -189,7 +189,7 @@ def run_benchmark_conformal_bend_minor():
     minor_ratios = [1.01, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
     header = ['name', 'tube'] + [f'ratio={a}' for a in minor_ratios]
 
-    for data_type in ['synthetic', 'real']:
+    for data_type in ['synthetic', 'real_single', 'real_multi']:
         files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
         results = []
         n = 0
@@ -226,7 +226,7 @@ def run_benchmark_computation_time():
     out_dir.mkdir(exist_ok=True)
     header = ['name', 'vertices', 'faces', 'total time', 'raw_ext_time', 'smooth_time', 'init_time', 'correction_time', 'restriction_time', 'bend_major_time', 'bend_minor_time']
 
-    for data_type in ['synthetic', 'real']:
+    for data_type in ['synthetic', 'real_single', 'real_multi']:
         files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
         results = []
         n = 0
