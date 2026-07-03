@@ -8,11 +8,11 @@ from src import initial_tube, tube_conformal_map, raw_extension, ring_smooth, co
 
 def main():
     print("Running benchmark for fixed boundary correction...")
-    run_benchmark_fixed()
+    # run_benchmark_fixed()
     print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
 
     print("Running benchmark for smoothed weight...")
-    run_benchmark_smoothed_weight()
+    # run_benchmark_smoothed_weight()
     print("Benchmark completed. Results saved to 'benchmark_results/free_results'.\n")
 
     print("Running benchmark for extension layers...")
@@ -36,7 +36,10 @@ def run_benchmark_fixed():
     out_dir = Path('benchmark_results/fixed_results')
     out_dir.mkdir(exist_ok=True)
     seam_strip_widths = [0.05, 0.25, 0.45, 0.65, 0.85, 1.0]
-    header = ['name', 'init'] + [f'width={w}' for w in seam_strip_widths]
+    seam_metric_width = 0.05
+    header = ['name', 'init', f'init_seam']
+    for w in seam_strip_widths:
+        header += [f'width={w}', f'width={w}_seam']
 
     for data_type in ['synthetic', 'real_single', 'real_multi']:
         files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
@@ -50,12 +53,20 @@ def run_benchmark_fixed():
             v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
 
             tube0 = initial_tube(v, f)
-            dist_init = np.mean(np.abs(_angular_distortion(v, f, tube0)))
+            seam_mask = _seam_face_mask(tube0, f, seam_metric_width)
+            dist_init = _mean_abs_angular_distortion(v, f, tube0)
 
-            row = [filepath.name, dist_init]
+            row = [
+                filepath.name,
+                dist_init,
+                _mean_abs_angular_distortion(v, f, tube0, seam_mask),
+            ]
             for sw in seam_strip_widths:
                 tube_fixed = tube_conformal_map(tube0, f, v, seam_strip_width=sw)
-                row.append(np.mean(np.abs(_angular_distortion(v, f, tube_fixed))))
+                row += [
+                    _mean_abs_angular_distortion(v, f, tube_fixed),
+                    _mean_abs_angular_distortion(v, f, tube_fixed, seam_mask),
+                ]
 
             results.append(row)
 
@@ -70,7 +81,7 @@ def run_benchmark_fixed():
 def run_benchmark_smoothed_weight():
     out_dir = Path('benchmark_results/free_results')
     out_dir.mkdir(exist_ok=True)
-    smooth_weights = [0.05, 0.1, 0.25, 0.5]
+    smooth_weights = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
     header = ['name', 'raw'] + [f'weight={w}' for w in smooth_weights]
 
     for data_type in ['synthetic', 'real_single', 'real_multi']:
@@ -275,6 +286,37 @@ def run_benchmark_computation_time():
             writer.writerows(results)
 
     return None
+
+
+def _mean_abs_angular_distortion(
+    v: np.ndarray,
+    f: np.ndarray,
+    vmap: np.ndarray,
+    face_mask: np.ndarray | None = None,
+) -> float:
+    distortion = _angular_distortion(v, f, vmap)
+
+    if face_mask is None:
+        return float(np.mean(np.abs(distortion)))
+
+    face_mask = np.asarray(face_mask, dtype=bool)
+    if not np.any(face_mask):
+        return float('nan')
+
+    nf = len(f)
+    masked_distortion = np.concatenate([
+        distortion[:nf][face_mask],
+        distortion[nf:2 * nf][face_mask],
+        distortion[2 * nf:][face_mask],
+    ])
+    return float(np.mean(np.abs(masked_distortion)))
+
+
+def _seam_face_mask(tube: np.ndarray, f: np.ndarray, seam_strip_width: float) -> np.ndarray:
+    theta = np.mod(np.arctan2(tube[:, 1], tube[:, 0]), 2.0 * np.pi)
+    theta_width = 2.0 * np.pi * seam_strip_width
+    strip_vertex_mask = (theta <= theta_width) | (theta >= 2.0 * np.pi - theta_width)
+    return np.all(strip_vertex_mask[f], axis=1)
 
 
 def _angular_distortion(v: np.ndarray, f: np.ndarray, vmap: np.ndarray) -> np.ndarray:
