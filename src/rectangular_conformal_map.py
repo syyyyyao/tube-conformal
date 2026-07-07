@@ -62,29 +62,29 @@ def rectangular_conformal_map(v: np.ndarray, f: np.ndarray, corner: np.ndarray) 
     bx = np.zeros(nv, dtype=float)
     by = np.zeros(nv, dtype=float)
 
-    bottom = bd_index[corner1 : corner2 + 1]
-    right = bd_index[corner2 : corner3 + 1]
-    top = bd_index[corner3 : corner4 + 1]
-    left = np.concatenate([bd_index[corner4:], bd_index[: corner1 + 1]])
+    seam0 = bd_index[corner1 : corner2 + 1]
+    boundary1 = bd_index[corner2 : corner3 + 1]
+    seam1 = bd_index[corner3 : corner4 + 1]
+    boundary0 = np.concatenate([bd_index[corner4:], bd_index[: corner1 + 1]])
 
-    if len(bottom) != len(top):
-        raise RuntimeError("Top and bottom boundary segments must have equal length")
+    if len(seam0) != len(seam1):
+        raise RuntimeError("Seam boundary segments must have equal length")
     
-    ax[bottom, :] = 0
-    for r, b, t in zip(bottom, bottom, top[::-1]):
+    ax[seam0, :] = 0
+    for r, b, t in zip(seam0, seam0, seam1[::-1]):
         ax[r, b] += 1
         ax[r, t] += -1
         
-    x_fixed = np.unique(np.concatenate([left, right]))
+    x_fixed = np.unique(np.concatenate([boundary0, boundary1]))
     ax[x_fixed, :] = 0
     ax[x_fixed, x_fixed] = 1
-    bx[right] = 1.0
+    bx[boundary1] = 1.0
     square_x = spsolve(ax.tocsr(), bx)
 
-    y_fixed = np.unique(np.concatenate([top, bottom]))
+    y_fixed = np.unique(np.concatenate([seam1, seam0]))
     ay[y_fixed, :] = 0
     ay[y_fixed, y_fixed] = 1
-    by[top] = 2.0 * np.pi
+    by[seam1] = 2.0 * np.pi
     square_y = spsolve(ay.tocsr(), by)
 
 
