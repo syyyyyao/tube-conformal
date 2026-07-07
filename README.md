@@ -128,7 +128,7 @@ The full benchmark may take a while. For quick debugging, reduce the file list o
 
 ### `initial_tube(v, f)`
 
-Computes an initial tube map. The method finds a shortest path connecting the two boundary loops, slices the surface into a disk, maps it to a rectangle, and converts the rectangular coordinates to tubular coordinates `(cos theta, sin theta, z)`.
+Computes an initial tube map. The method finds a shortest path connecting the two boundary loops, slices the surface into a disk, maps it to a parallelogram, and converts the parallelogram coordinates to tubular coordinates `(cos theta, sin theta, z)`.
 
 ### `tube_conformal_map(tube0, f, v, seam_strip_width=0.05)`
 

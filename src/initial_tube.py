@@ -2,7 +2,7 @@ import numpy as np
 
 from .meshboundaries import meshboundaries
 from .slice_mesh import slice_mesh
-from .rectangular_conformal_map import rectangular_conformal_map
+from .parallelogram_conformal_map import parallelogram_conformal_map
 from .cut_path_finder import cut_path_finder
 
 
@@ -32,10 +32,10 @@ def initial_tube(v: np.ndarray, f: np.ndarray) -> np.ndarray:
         dtype=np.int64,
     )
 
-    # map the sliced surface to a square
-    rect_sliced = rectangular_conformal_map(v_sliced, f_sliced, corner)
+    # map the sliced surface to a parallelogram
+    para_sliced = parallelogram_conformal_map(v_sliced, f_sliced, corner)
 
     # map to a tube
-    rect = rect_sliced[:len(v)]
+    para = para_sliced[:len(v)]
 
-    return np.column_stack([np.cos(rect[:, 1]), np.sin(rect[:, 1]), rect[:, 0]])
+    return np.column_stack([np.cos(para[:, 1]), np.sin(para[:, 1]), para[:, 0]])

@@ -1,5 +1,4 @@
 import numpy as np
-import networkx as nx
 from scipy.sparse.linalg import spsolve
 from scipy.optimize import minimize, minimize_scalar
 
@@ -7,10 +6,9 @@ from .meshboundaries import meshboundaries
 from .beltrami_coefficient import beltrami_coefficient
 from .cotangent_laplacian import cotangent_laplacian
 from .generalized_laplacian import generalized_laplacian
-from .face_area import face_area
 
 
-def rectangular_conformal_map(v: np.ndarray, f: np.ndarray, corner: np.ndarray) -> np.ndarray:
+def parallelogram_conformal_map(v: np.ndarray, f: np.ndarray, corner: np.ndarray) -> np.ndarray:
     # check dimension of v
     if v.shape[1] == 2:
         v = np.column_stack([v, np.zeros(len(v))])
@@ -54,7 +52,7 @@ def rectangular_conformal_map(v: np.ndarray, f: np.ndarray, corner: np.ndarray) 
     disk = np.column_stack([np.real(z), np.imag(z)])
     
 
-    # map disk to rectangle
+    # map disk to parallelogram
     mu = beltrami_coefficient(disk, f, v)
     ax = generalized_laplacian(disk, f, mu).tolil()
     ay = ax.copy()
@@ -79,44 +77,44 @@ def rectangular_conformal_map(v: np.ndarray, f: np.ndarray, corner: np.ndarray) 
     ax[x_fixed, :] = 0
     ax[x_fixed, x_fixed] = 1
     bx[boundary1] = 1.0
-    square_x = spsolve(ax.tocsr(), bx)
+    base_height = spsolve(ax.tocsr(), bx)
 
     y_fixed = np.unique(np.concatenate([seam1, seam0]))
     ay[y_fixed, :] = 0
     ay[y_fixed, y_fixed] = 1
     by[seam1] = 2.0 * np.pi
-    square_y = spsolve(ay.tocsr(), by)
+    base_theta = spsolve(ay.tocsr(), by)
 
     def objective(params):
         width, shift = params
         if width <= np.finfo(float).eps:
             return np.inf
-        para = np.column_stack([width * square_x, square_y + shift * square_x])
+        para = np.column_stack([width * base_height, base_theta + shift * base_height])
         mu_para = beltrami_coefficient(para, f, v)
         return float(np.sum(np.abs(mu_para) ** 2))
 
-    width_rect = minimize_scalar(
+    width_init = minimize_scalar(
         lambda width: objective((width, 0.0)),
         method="Bounded",
         bounds=(0.0, 10.0),
     ).x
-    rect_energy = objective((width_rect, 0.0))
+    init_energy = objective((width_init, 0.0))
 
     opt = minimize(
         objective,
-        x0=np.array([width_rect, 0.0]),
+        x0=np.array([width_init, 0.0]),
         method="Powell",
         bounds=((0.01, 100.0), (-2.0 * np.pi, 2.0 * np.pi)),
         options={"xtol": 1e-4, "ftol": 1e-4, "maxiter": 120},
     )
 
-    if np.isfinite(opt.fun) and opt.fun < rect_energy:
+    if np.isfinite(opt.fun) and opt.fun < init_energy:
         width_opt, shift_opt = opt.x
     else:
-        width_opt, shift_opt = width_rect, 0.0
+        width_opt, shift_opt = width_init, 0.0
 
-    height = width_opt * square_x
+    height = width_opt * base_height
     height = height - np.max(height)
-    theta = square_y + shift_opt * square_x
+    theta = base_theta + shift_opt * base_height
 
     return np.column_stack([height, theta])
