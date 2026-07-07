@@ -1,7 +1,7 @@
 import numpy as np
 import networkx as nx
 from scipy.sparse.linalg import spsolve
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize, minimize_scalar
 
 from .meshboundaries import meshboundaries
 from .beltrami_coefficient import beltrami_coefficient
@@ -87,14 +87,36 @@ def rectangular_conformal_map(v: np.ndarray, f: np.ndarray, corner: np.ndarray) 
     by[seam1] = 2.0 * np.pi
     square_y = spsolve(ay.tocsr(), by)
 
+    def objective(params):
+        width, shift = params
+        if width <= np.finfo(float).eps:
+            return np.inf
+        para = np.column_stack([width * square_x, square_y + shift * square_x])
+        mu_para = beltrami_coefficient(para, f, v)
+        return float(np.sum(np.abs(mu_para) ** 2))
 
-    def objective(width):
-        rec = np.column_stack([width * square_x, square_y])
+    width_rect = minimize_scalar(
+        lambda width: objective((width, 0.0)),
+        method="Bounded",
+        bounds=(0.0, 10.0),
+    ).x
+    rect_energy = objective((width_rect, 0.0))
 
-        return np.sum(np.abs(beltrami_coefficient(rec, f, v)) ** 2)
+    opt = minimize(
+        objective,
+        x0=np.array([width_rect, 0.0]),
+        method="Powell",
+        bounds=((0.01, 100.0), (-2.0 * np.pi, 2.0 * np.pi)),
+        options={"xtol": 1e-4, "ftol": 1e-4, "maxiter": 120},
+    )
 
-    width_opt = minimize_scalar(objective, method="Bounded", bounds=(0,10)).x
+    if np.isfinite(opt.fun) and opt.fun < rect_energy:
+        width_opt, shift_opt = opt.x
+    else:
+        width_opt, shift_opt = width_rect, 0.0
+
     height = width_opt * square_x
     height = height - np.max(height)
+    theta = square_y + shift_opt * square_x
 
-    return np.column_stack([height, square_y])
+    return np.column_stack([height, theta])

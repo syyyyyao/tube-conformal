@@ -1,8 +1,11 @@
 import numpy as np
+from scipy import sparse
+from scipy.sparse.csgraph import dijkstra
 from scipy.sparse.linalg import spsolve
 
 from .meshboundaries import meshboundaries
 from .beltrami_coefficient import beltrami_coefficient
+from .cut_path_finder import cut_path_finder
 from .generalized_laplacian import generalized_laplacian
 
 
@@ -13,11 +16,9 @@ def tube_conformal_map(
     seam_strip_width: float = 0.05,
 ) -> np.ndarray:
     """
-    Apply a quasi-conformal correction only near the seam of the tube map.
+    Apply a quasi-conformal correction only near the cut seam of the tube map.
 
-    The correction is restricted to the two angular strips adjacent to the
-    seam at theta = 0 / 2*pi. Outside the strips, the input tube map is
-    preserved.
+    Outside the seam strip, the input tube map is preserved.
     """
 
     # get boundaries
@@ -28,10 +29,8 @@ def tube_conformal_map(
     # map tube to annulus
     annulus0 = np.column_stack([np.exp(tube0[:, 2]) * tube0[:, 0], np.exp(tube0[:, 2]) * tube0[:, 1]])
 
-    # compute seam strip mask
-    theta = np.mod(np.arctan2(annulus0[:, 1], annulus0[:, 0]), 2.0 * np.pi)
-    theta_width = 2.0 * np.pi * seam_strip_width
-    strip_vertex_mask = (theta <= theta_width) | (theta >= 2.0 * np.pi - theta_width)
+    cut_path = cut_path_finder(v, f, boundary_loops)
+    strip_vertex_mask = _cut_path_strip_mask(tube0, f, cut_path, seam_strip_width)
     strip_face_mask = np.all(strip_vertex_mask[f], axis=1)
 
     if not np.any(strip_face_mask):
@@ -79,3 +78,31 @@ def tube_conformal_map(
     radius = np.sqrt(annulus[:, 0] ** 2 + annulus[:, 1] ** 2)
 
     return np.column_stack([annulus[:, 0] / radius, annulus[:, 1] / radius, np.log(radius)])
+
+
+def _cut_path_strip_mask(
+    tube: np.ndarray,
+    f: np.ndarray,
+    cut_path: np.ndarray,
+    seam_strip_width: float,
+) -> np.ndarray:
+    if len(cut_path) == 0:
+        return np.zeros(len(tube), dtype=bool)
+
+    edges = np.sort(
+        np.vstack([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]]),
+        axis=1,
+    )
+    edges = np.unique(edges, axis=0)
+    lengths = np.linalg.norm(tube[edges[:, 0]] - tube[edges[:, 1]], axis=1)
+
+    source = len(tube)
+    eps_edges = np.full(len(cut_path), np.finfo(float).eps)
+    rows = np.concatenate([edges[:, 0], edges[:, 1], np.full(len(cut_path), source), cut_path])
+    cols = np.concatenate([edges[:, 1], edges[:, 0], cut_path, np.full(len(cut_path), source)])
+    data = np.concatenate([lengths, lengths, eps_edges, eps_edges])
+    graph = sparse.csr_matrix((data, (rows, cols)), shape=(len(tube) + 1, len(tube) + 1))
+
+    dist = dijkstra(graph, directed=False, indices=source)[: len(tube)]
+    threshold = 2.0 * np.pi * seam_strip_width
+    return dist <= threshold
