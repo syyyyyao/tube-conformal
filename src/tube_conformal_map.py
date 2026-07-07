@@ -13,20 +13,98 @@ def tube_conformal_map(
     tube0: np.ndarray,
     f: np.ndarray,
     v: np.ndarray,
-    seam_strip_width: float = 0.05,
+    seam_strip_width: float = 0.10,
 ) -> np.ndarray:
     """
-    Apply a quasi-conformal correction only near the cut seam of the tube map.
+    Apply the two-stage cut-path-only tube conformal correction.
 
-    Outside the seam strip, the input tube map is preserved.
+    The first stage corrects a strip around the cut path. The second stage
+    removes only the cut path vertices, unwraps the remaining surface to
+    parallelogram coordinates, fixes its boundary, and solves one generalized
+    Laplacian system.
     """
 
-    # get boundaries
     boundary_loops = meshboundaries(f)
     if len(boundary_loops) != 2:
         raise ValueError(f"Expected 2 boundary loops for a tube, found {len(boundary_loops)}")
 
-    # map tube to annulus
+    cut_path = cut_path_finder(v, f, boundary_loops)
+    tube_corrected = _seam_strip_conformal_map(
+        tube0,
+        f,
+        v,
+        seam_strip_width=seam_strip_width,
+    )
+
+    cut_vertex_mask = np.zeros(len(v), dtype=bool)
+    cut_vertex_mask[cut_path] = True
+
+    complement_face_mask = np.all(~cut_vertex_mask[f], axis=1)
+    if not np.any(complement_face_mask):
+        return tube_corrected
+
+    local_vertices, local_faces = np.unique(
+        f[complement_face_mask].reshape(-1),
+        return_inverse=True,
+    )
+    local_faces = local_faces.reshape(-1, 3)
+    if len(local_vertices) == 0 or len(local_faces) == 0:
+        return tube_corrected
+
+    local_boundary_loops = meshboundaries(local_faces)
+    if len(local_boundary_loops) == 0:
+        return tube_corrected
+
+    local_bd = np.unique(np.concatenate(local_boundary_loops))
+    free_mask = np.ones(len(local_vertices), dtype=bool)
+    free_mask[local_bd] = False
+    if not np.any(free_mask):
+        return tube_corrected
+
+    local_para = _tube_to_unwrapped_parallelogram(
+        tube_corrected[local_vertices],
+        local_faces,
+    )
+    local_v = v[local_vertices]
+
+    mu = beltrami_coefficient(local_para, local_faces, local_v)
+    laplacian_mat = generalized_laplacian(local_para, local_faces, mu).tolil()
+    laplacian_mat[local_bd, :] = 0
+    laplacian_mat[local_bd, local_bd] = 1
+    laplacian_mat = laplacian_mat.tocsr()
+
+    x_fixed = np.zeros(len(local_vertices))
+    y_fixed = np.zeros(len(local_vertices))
+    x_fixed[local_bd] = local_para[local_bd, 0]
+    y_fixed[local_bd] = local_para[local_bd, 1]
+
+    x_local = spsolve(laplacian_mat, x_fixed)
+    y_local = spsolve(laplacian_mat, y_fixed)
+
+    tube = tube_corrected.copy()
+    free_vertices = local_vertices[free_mask]
+    theta = y_local[free_mask]
+    tube[free_vertices, 0] = np.cos(theta)
+    tube[free_vertices, 1] = np.sin(theta)
+    tube[free_vertices, 2] = x_local[free_mask]
+
+    return tube
+
+
+def _seam_strip_conformal_map(
+    tube0: np.ndarray,
+    f: np.ndarray,
+    v: np.ndarray,
+    seam_strip_width: float,
+) -> np.ndarray:
+    """
+    Apply the first-stage quasi-conformal correction near the cut seam.
+    """
+
+    boundary_loops = meshboundaries(f)
+    if len(boundary_loops) != 2:
+        raise ValueError(f"Expected 2 boundary loops for a tube, found {len(boundary_loops)}")
+
     annulus0 = np.column_stack([np.exp(tube0[:, 2]) * tube0[:, 0], np.exp(tube0[:, 2]) * tube0[:, 1]])
 
     cut_path = cut_path_finder(v, f, boundary_loops)
@@ -35,12 +113,12 @@ def tube_conformal_map(
 
     if not np.any(strip_face_mask):
         return tube0
-    
+
     local_vertices, local_faces = np.unique(f[strip_face_mask].reshape(-1), return_inverse=True)
     local_faces = local_faces.reshape(-1, 3)
-
     if len(local_vertices) == 0 or len(local_faces) == 0:
         return tube0
+
     local_annulus0 = annulus0[local_vertices]
     local_v = v[local_vertices]
 
@@ -51,13 +129,11 @@ def tube_conformal_map(
     local_bd = np.unique(np.concatenate(local_boundary_loops))
     free_mask = np.ones(len(local_vertices), dtype=bool)
     free_mask[local_bd] = False
-
     if not np.any(free_mask):
         return tube0
 
     mu = beltrami_coefficient(local_annulus0, local_faces, local_v)
     laplacian_mat = generalized_laplacian(local_annulus0, local_faces, mu).tolil()
-
     laplacian_mat[local_bd, :] = 0
     laplacian_mat[local_bd, local_bd] = 1
     laplacian_mat = laplacian_mat.tocsr()
@@ -76,8 +152,43 @@ def tube_conformal_map(
     annulus[free_vertices, 1] = y_local[free_mask]
 
     radius = np.sqrt(annulus[:, 0] ** 2 + annulus[:, 1] ** 2)
-
     return np.column_stack([annulus[:, 0] / radius, annulus[:, 1] / radius, np.log(radius)])
+
+
+def _tube_to_unwrapped_parallelogram(tube: np.ndarray, f: np.ndarray) -> np.ndarray:
+    theta_mod = np.arctan2(tube[:, 1], tube[:, 0])
+    theta = np.full(len(tube), np.nan)
+
+    edges = np.vstack([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    adjacency: list[list[int]] = [[] for _ in range(len(tube))]
+    for i, j in edges:
+        i = int(i)
+        j = int(j)
+        adjacency[i].append(j)
+        adjacency[j].append(i)
+
+    vertices = np.unique(f.reshape(-1))
+    for root in vertices:
+        root = int(root)
+        if np.isfinite(theta[root]):
+            continue
+        theta[root] = theta_mod[root]
+        stack = [root]
+        while stack:
+            current = stack.pop()
+            for neighbor in adjacency[current]:
+                if np.isfinite(theta[neighbor]):
+                    continue
+                delta = _wrap_to_pi(theta_mod[neighbor] - theta_mod[current])
+                theta[neighbor] = theta[current] + delta
+                stack.append(neighbor)
+
+    theta = np.where(np.isfinite(theta), theta, theta_mod)
+    return np.column_stack([tube[:, 2], theta])
+
+
+def _wrap_to_pi(theta: np.ndarray | float) -> np.ndarray | float:
+    return (theta + np.pi) % (2.0 * np.pi) - np.pi
 
 
 def _cut_path_strip_mask(
