@@ -76,4 +76,4 @@ def initial_tube(v: np.ndarray, f: np.ndarray) -> np.ndarray:
     # map to a tube
     rect = rect_sliced[:len(v)]
 
-    return np.column_stack([np.cos(rect[:, 0]), np.sin(rect[:, 0]), rect[:, 1]])
+    return np.column_stack([np.cos(rect[:, 1]), np.sin(rect[:, 1]), rect[:, 0]])

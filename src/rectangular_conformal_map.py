@@ -62,41 +62,39 @@ def rectangular_conformal_map(v: np.ndarray, f: np.ndarray, corner: np.ndarray) 
     bx = np.zeros(nv, dtype=float)
     by = np.zeros(nv, dtype=float)
 
-    left = bd_index[corner1 : corner2 + 1]
-    top = bd_index[corner2 : corner3 + 1]
-    right = bd_index[corner3 : corner4 + 1]
-    bottom = np.concatenate([bd_index[corner4:], bd_index[: corner1 + 1]])
+    bottom = bd_index[corner1 : corner2 + 1]
+    right = bd_index[corner2 : corner3 + 1]
+    top = bd_index[corner3 : corner4 + 1]
+    left = np.concatenate([bd_index[corner4:], bd_index[: corner1 + 1]])
 
-    if len(left) != len(right):
-        raise RuntimeError("Left and right boundary segments must have equal length")
+    if len(bottom) != len(top):
+        raise RuntimeError("Top and bottom boundary segments must have equal length")
     
-    ay[left, :] = 0
-    for r, b, t in zip(left, left, right[::-1]):
-        ay[r, b] += 1
-        ay[r, t] += -1
-
-
+    ax[bottom, :] = 0
+    for r, b, t in zip(bottom, bottom, top[::-1]):
+        ax[r, b] += 1
+        ax[r, t] += -1
+        
     x_fixed = np.unique(np.concatenate([left, right]))
     ax[x_fixed, :] = 0
     ax[x_fixed, x_fixed] = 1
-    bx[right] = 2.0 * np.pi
-    rec_x = spsolve(ax.tocsr(), bx)
+    bx[right] = 1.0
+    square_x = spsolve(ax.tocsr(), bx)
 
     y_fixed = np.unique(np.concatenate([top, bottom]))
     ay[y_fixed, :] = 0
     ay[y_fixed, y_fixed] = 1
+    by[top] = 2.0 * np.pi
+    square_y = spsolve(ay.tocsr(), by)
 
 
-    def objective(x_len):
-        by = np.zeros(nv, dtype=float)
-        by[top] = x_len
-        rec_y = spsolve(ay.tocsr(), by)
-        rec = np.column_stack([rec_x, rec_y])
+    def objective(width):
+        rec = np.column_stack([width * square_x, square_y])
 
         return np.sum(np.abs(beltrami_coefficient(rec, f, v)) ** 2)
 
-    by_opt = minimize_scalar(objective, method="Bounded", bounds=(0,10)).x
-    by[top] = by_opt
-    rec_y_opt = spsolve(ay.tocsr(), by)
+    width_opt = minimize_scalar(objective, method="Bounded", bounds=(0,10)).x
+    height = width_opt * square_x
+    height = height - np.max(height)
 
-    return np.column_stack([rec_x, rec_y_opt])
+    return np.column_stack([height, square_y])
