@@ -59,7 +59,7 @@ v = np.asarray(mesh.vertices)
 f = np.asarray(mesh.faces)
 
 tube0 = initial_tube(v, f)
-tube = tube_conformal_map(tube0, f, v, seam_strip_width=0.05)
+tube = tube_conformal_map(tube0, f, v)
 
 out = trimesh.Trimesh(vertices=tube, faces=f, process=False)
 out.export("straight_01_tube.obj")
@@ -81,7 +81,7 @@ v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
 v_ext = ring_smooth(v_ext_raw, f_ext, smooth_weight=0.5)
 
 tube0_ext = initial_tube(v_ext, f_ext)
-tube_ext = tube_conformal_map(tube0_ext, f_ext, v_ext, seam_strip_width=0.05)
+tube_ext = tube_conformal_map(tube0_ext, f_ext, v_ext)
 
 # Restrict the result back to the original mesh vertices.
 tube = tube_ext[: len(v)]
@@ -130,9 +130,9 @@ The full benchmark may take a while. For quick debugging, reduce the file list o
 
 Computes an initial tube map. The method finds a shortest path connecting the two boundary loops, slices the surface into a disk, maps it to a parallelogram, and converts the parallelogram coordinates to tubular coordinates `(cos theta, sin theta, z)`.
 
-### `tube_conformal_map(tube0, f, v, seam_strip_width=0.05)`
+### `tube_conformal_map(tube0, f, v, seam_strip_width=0.10)`
 
-Applies a local quasi-conformal correction near the angular seam. The initial tube map is converted to an annulus, corrected with a Beltrami-coefficient-based generalized Laplacian on the seam strip, and converted back to tubular coordinates.
+Applies a two-stage tube correction. The first stage corrects an annular strip around the cut path. The second stage cuts the surface along the cut path, fixes the cut-surface boundary, solves one generalized Laplacian system in parallelogram coordinates, and maps the result back to tubular coordinates.
 
 ### `raw_extension(v, f, normal_blend)`
 
