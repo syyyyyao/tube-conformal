@@ -16,12 +16,9 @@ from src import (
 
 
 def main():
-    print("Running benchmark for fixed boundary ablation...")
-    # run_benchmark_fixed_ablation()
-    print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
-    
-    print("Running benchmark for fixed boundary correction...")
-    # run_benchmark_fixed()
+
+    print("Running benchmark for correction width...")
+    # run_benchmark_correction_width()
     print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
 
     print("Running benchmark for smoothed weight...")
@@ -29,8 +26,12 @@ def main():
     print("Benchmark completed. Results saved to 'benchmark_results/free_results'.\n")
 
     print("Running benchmark for extension layers...")
-    run_benchmark_extension_layers()
+    # run_benchmark_extension_layers()
     print("Benchmark completed. Results saved to 'benchmark_results/free_results'.\n")
+
+    print("Running benchmark for fixed boundary ablation...")
+    run_benchmark_ablation()
+    print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
 
     print("Running benchmark for major conformal bending...")
     # run_benchmark_conformal_bend_major()
@@ -45,14 +46,13 @@ def main():
     print("Benchmark completed. Results saved to ‘benchmark_results/computation_time_results’.\n")
 
 
-def run_benchmark_fixed():
-    out_dir = Path('benchmark_results/fixed_results')
+def run_benchmark_correction_width():
+    out_dir = Path('benchmark_results/parameter_results')
     out_dir.mkdir(exist_ok=True)
-    seam_strip_widths = [0.05, 0.25, 0.45, 0.65, 0.85, 1.0]
-    seam_metric_width = 0.05
-    header = ['name', 'init', f'init_seam']
+    seam_strip_widths = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
+    header = ['name']
     for w in seam_strip_widths:
-        header += [f'width={w}', f'width={w}_seam']
+        header.append(f'width={w}')
 
     for data_type in ['synthetic', 'real_single', 'real_multi']:
         files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
@@ -66,66 +66,16 @@ def run_benchmark_fixed():
             v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
 
             tube0 = initial_tube(v, f)
-            seam_mask = _seam_face_mask(tube0, f, seam_metric_width)
-            dist_init = _mean_abs_angular_distortion(v, f, tube0)
 
-            row = [
-                filepath.name,
-                dist_init,
-                _mean_abs_angular_distortion(v, f, tube0, seam_mask),
-            ]
+            row = [filepath.name]
             for sw in seam_strip_widths:
                 tube_seam = seam_correction(tube0, f, v, seam_strip_width=sw)
                 tube_fixed = interior_refinement(tube_seam, f, v)
-                row += [
-                    _mean_abs_angular_distortion(v, f, tube_fixed),
-                    _mean_abs_angular_distortion(v, f, tube_fixed, seam_mask),
-                ]
+                row.append(_mean_abs_angular_distortion(v, f, tube_fixed))
 
             results.append(row)
 
-        with open(out_dir / f'{data_type}_fixed_results.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(header)
-            writer.writerows(results)
-
-    return None
-
-
-def run_benchmark_fixed_ablation(seam_strip_width: float = 0.05):
-    out_dir = Path('benchmark_results/fixed_results')
-    out_dir.mkdir(exist_ok=True)
-    header = [
-        'name',
-        'initial_tube',
-        'after_seam_correction',
-        'after_interior_refinement',
-    ]
-
-    for data_type in ['synthetic', 'real_single', 'real_multi']:
-        files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
-        results = []
-        n = 0
-
-        for filepath in files:
-            n = n + 1
-            print(f"Processing {filepath} ({n}/{len(files)})...")
-            mesh = trimesh.load(filepath)
-            v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
-
-            tube0 = initial_tube(v, f)
-            tube_seam = seam_correction(tube0, f, v, seam_strip_width=seam_strip_width)
-            tube_full = interior_refinement(tube_seam, f, v)
-
-            row = [
-                filepath.name,
-                _mean_abs_angular_distortion(v, f, tube0),
-                _mean_abs_angular_distortion(v, f, tube_seam),
-                _mean_abs_angular_distortion(v, f, tube_full),
-            ]
-            results.append(row)
-
-        with open(out_dir / f'{data_type}_fixed_ablation_results.csv', 'w', newline='') as f:
+        with open(out_dir / f'{data_type}_correction_width_results.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(header)
             writer.writerows(results)
@@ -134,7 +84,7 @@ def run_benchmark_fixed_ablation(seam_strip_width: float = 0.05):
 
 
 def run_benchmark_smoothed_weight():
-    out_dir = Path('benchmark_results/free_results')
+    out_dir = Path('benchmark_results/parameter_results')
     out_dir.mkdir(exist_ok=True)
     smooth_weights = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
     header = ['name', 'raw'] + [f'weight={w}' for w in smooth_weights]
@@ -151,14 +101,14 @@ def run_benchmark_smoothed_weight():
             v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
 
             v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
-            tube_ext_raw = tube_conformal_map(v_ext_raw, f_ext, seam_strip_width=0.05)
+            tube_ext_raw = tube_conformal_map(v_ext_raw, f_ext, seam_strip_width=0.20)
             tube_raw = tube_ext_raw[:len(v)]
             dist_raw = np.mean(np.abs(_angular_distortion(v, f, tube_raw)))
 
             row = [filepath.name, dist_raw]
             for w in smooth_weights:
                 v_smooth = ring_smooth(v_ext_raw, f_ext, smooth_weight=w)
-                tube_ext = tube_conformal_map(v_smooth, f_ext, seam_strip_width=0.05)
+                tube_ext = tube_conformal_map(v_smooth, f_ext, seam_strip_width=0.20)
                 tube_free = tube_ext[:len(v)]
                 row.append(np.mean(np.abs(_angular_distortion(v, f, tube_free))))
 
@@ -173,7 +123,7 @@ def run_benchmark_smoothed_weight():
 
 
 def run_benchmark_extension_layers():
-    out_dir = Path('benchmark_results/free_results')
+    out_dir = Path('benchmark_results/parameter_results')
     out_dir.mkdir(exist_ok=True)
     max_layers = 3
     header = ['name'] + [f'layers={m}' for m in range(1, max_layers+1)]
@@ -195,7 +145,7 @@ def run_benchmark_extension_layers():
                 v_new_raw, f_new = raw_extension(v_current, f_current, normal_blend=0.15)
                 v_new = ring_smooth(v_new_raw, f_new, smooth_weight=0.5)
                 v_current, f_current = v_new, f_new
-                tube_ext = tube_conformal_map(v_new, f_new, seam_strip_width=0.05)
+                tube_ext = tube_conformal_map(v_new, f_new, seam_strip_width=0.20)
                 tube_free = tube_ext[:len(v)]
                 row.append(np.mean(np.abs(_angular_distortion(v, f, tube_free))))
 
@@ -205,6 +155,54 @@ def run_benchmark_extension_layers():
             writer = csv.writer(f)
             writer.writerow(header)
             writer.writerows(results)
+    return None
+
+
+def run_benchmark_ablation():
+    out_dir = Path('benchmark_results/fixed_results')
+    out_dir.mkdir(exist_ok=True)
+    header = [
+        'name',
+        'fixed_initial_tube',
+        'fixed_after_seam_correction',
+        'fixed_after_interior_refinement',
+        'free_tube',
+    ]
+
+    for data_type in ['synthetic', 'real_single', 'real_multi']:
+        files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
+        results = []
+        n = 0
+
+        for filepath in files:
+            n = n + 1
+            print(f"Processing {filepath} ({n}/{len(files)})...")
+            mesh = trimesh.load(filepath)
+            v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
+
+            tube0 = initial_tube(v, f)
+            tube_seam = seam_correction(tube0, f, v, seam_strip_width = 0.20)
+            tube_full = interior_refinement(tube_seam, f, v)
+
+            v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
+            v_ext = ring_smooth(v_ext_raw, f_ext, smooth_weight=0.50)
+            tube_free_ext = tube_conformal_map(v_ext, f_ext, seam_strip_width=0.20)
+            tube_free = tube_free_ext[:len(v)]
+
+            row = [
+                filepath.name,
+                _mean_abs_angular_distortion(v, f, tube0),
+                _mean_abs_angular_distortion(v, f, tube_seam),
+                _mean_abs_angular_distortion(v, f, tube_full),
+                _mean_abs_angular_distortion(v, f, tube_free),
+            ]
+            results.append(row)
+
+        with open(out_dir / f'{data_type}_fixed_ablation_results.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(results)
+
     return None
 
 
@@ -389,13 +387,6 @@ def _mean_abs_angular_distortion(
         distortion[2 * nf:][face_mask],
     ])
     return float(np.mean(np.abs(masked_distortion)))
-
-
-def _seam_face_mask(tube: np.ndarray, f: np.ndarray, seam_strip_width: float) -> np.ndarray:
-    theta = np.mod(np.arctan2(tube[:, 1], tube[:, 0]), 2.0 * np.pi)
-    theta_width = 2.0 * np.pi * seam_strip_width
-    strip_vertex_mask = (theta <= theta_width) | (theta >= 2.0 * np.pi - theta_width)
-    return np.all(strip_vertex_mask[f], axis=1)
 
 
 def _angular_distortion(v: np.ndarray, f: np.ndarray, vmap: np.ndarray) -> np.ndarray:
