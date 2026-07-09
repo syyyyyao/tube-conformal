@@ -10,8 +10,8 @@ The repository includes synthetic meshes, real meshes, core algorithm modules, a
 
 ## Features
 
-- Initial tubular parameterization for tube-like meshes: `initial_tube`
-- Seam-local quasi-conformal correction: `tube_conformal_map`
+- Fixed-boundary tubular parameterization pipeline: `tube_conformal_map`
+- Ablation-ready stages: `initial_tube`, `seam_correction`, `interior_refinement`
 - Boundary extension and smoothing for free-boundary workflows: `raw_extension`, `ring_smooth`
 - Major-axis and minor-axis conformal bending: `conformal_bend_major`, `conformal_bend_minor`
 - Batch experiments and CSV output: `benchmark.py`
@@ -52,14 +52,13 @@ The following example loads a tubular `.obj` mesh, computes a tubular conformal 
 import numpy as np
 import trimesh
 
-from src import initial_tube, tube_conformal_map
+from src import tube_conformal_map
 
 mesh = trimesh.load("data/synthetic/straight_01.obj", process=False)
 v = np.asarray(mesh.vertices)
 f = np.asarray(mesh.faces)
 
-tube0 = initial_tube(v, f)
-tube = tube_conformal_map(tube0, f, v)
+tube = tube_conformal_map(v, f)
 
 out = trimesh.Trimesh(vertices=tube, faces=f, process=False)
 out.export("straight_01_tube.obj")
@@ -71,7 +70,7 @@ For the free-boundary workflow with boundary extension and ring smoothing:
 import numpy as np
 import trimesh
 
-from src import initial_tube, tube_conformal_map, raw_extension, ring_smooth
+from src import tube_conformal_map, raw_extension, ring_smooth
 
 mesh = trimesh.load("data/synthetic/bent_01.obj", process=False)
 v = np.asarray(mesh.vertices)
@@ -80,8 +79,7 @@ f = np.asarray(mesh.faces)
 v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
 v_ext = ring_smooth(v_ext_raw, f_ext, smooth_weight=0.5)
 
-tube0_ext = initial_tube(v_ext, f_ext)
-tube_ext = tube_conformal_map(tube0_ext, f_ext, v_ext)
+tube_ext = tube_conformal_map(v_ext, f_ext)
 
 # Restrict the result back to the original mesh vertices.
 tube = tube_ext[: len(v)]
@@ -126,13 +124,21 @@ The full benchmark may take a while. For quick debugging, reduce the file list o
 
 ## Core API
 
+### `tube_conformal_map(v, f, seam_strip_width=0.10)`
+
+Computes the full fixed-boundary tubular parameterization. The method runs the three stages in sequence: initial tube parameterization, cut seam correction, and cut-open interior refinement.
+
 ### `initial_tube(v, f)`
 
 Computes an initial tube map. The method finds a shortest path connecting the two boundary loops, slices the surface into a disk, maps it to a parallelogram, and converts the parallelogram coordinates to tubular coordinates `(cos theta, sin theta, z)`.
 
-### `tube_conformal_map(tube0, f, v, seam_strip_width=0.10)`
+### `seam_correction(tube0, f, v, seam_strip_width=0.10)`
 
-Applies a two-stage tube correction. The first stage corrects an annular strip around the cut path. The second stage cuts the surface along the cut path, fixes the cut-surface boundary, solves one generalized Laplacian system in parallelogram coordinates, and maps the result back to tubular coordinates.
+Corrects an annular strip around the cut seam while keeping the rest of the tube unchanged.
+
+### `interior_refinement(tube_corrected, f, v)`
+
+Cuts the surface along the cut path, fixes the cut-surface boundary, solves one generalized Laplacian system in parallelogram coordinates, and maps the result back to tubular coordinates.
 
 ### `raw_extension(v, f, normal_blend)`
 

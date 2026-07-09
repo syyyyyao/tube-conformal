@@ -3,7 +3,16 @@ import trimesh
 import time
 import csv
 from pathlib import Path
-from src import initial_tube, tube_conformal_map, raw_extension, ring_smooth, conformal_bend_major, conformal_bend_minor
+from src import (
+    initial_tube,
+    seam_correction,
+    interior_refinement,
+    tube_conformal_map,
+    raw_extension,
+    ring_smooth,
+    conformal_bend_major,
+    conformal_bend_minor,
+)
 
 
 def main():
@@ -62,7 +71,8 @@ def run_benchmark_fixed():
                 _mean_abs_angular_distortion(v, f, tube0, seam_mask),
             ]
             for sw in seam_strip_widths:
-                tube_fixed = tube_conformal_map(tube0, f, v, seam_strip_width=sw)
+                tube_seam = seam_correction(tube0, f, v, seam_strip_width=sw)
+                tube_fixed = interior_refinement(tube_seam, f, v)
                 row += [
                     _mean_abs_angular_distortion(v, f, tube_fixed),
                     _mean_abs_angular_distortion(v, f, tube_fixed, seam_mask),
@@ -96,16 +106,14 @@ def run_benchmark_smoothed_weight():
             v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
 
             v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
-            tube0_ext_raw = initial_tube(v_ext_raw, f_ext)
-            tube_ext_raw = tube_conformal_map(tube0_ext_raw, f_ext, v_ext_raw, seam_strip_width=0.05)
+            tube_ext_raw = tube_conformal_map(v_ext_raw, f_ext, seam_strip_width=0.05)
             tube_raw = tube_ext_raw[:len(v)]
             dist_raw = np.mean(np.abs(_angular_distortion(v, f, tube_raw)))
 
             row = [filepath.name, dist_raw]
             for w in smooth_weights:
                 v_smooth = ring_smooth(v_ext_raw, f_ext, smooth_weight=w)
-                tube0_ext = initial_tube(v_smooth, f_ext)
-                tube_ext = tube_conformal_map(tube0_ext, f_ext, v_smooth, seam_strip_width=0.05)
+                tube_ext = tube_conformal_map(v_smooth, f_ext, seam_strip_width=0.05)
                 tube_free = tube_ext[:len(v)]
                 row.append(np.mean(np.abs(_angular_distortion(v, f, tube_free))))
 
@@ -142,8 +150,7 @@ def run_benchmark_extension_layers():
                 v_new_raw, f_new = raw_extension(v_current, f_current, normal_blend=0.15)
                 v_new = ring_smooth(v_new_raw, f_new, smooth_weight=0.5)
                 v_current, f_current = v_new, f_new
-                tube0_ext = initial_tube(v_new, f_new)
-                tube_ext = tube_conformal_map(tube0_ext, f_new, v_new, seam_strip_width=0.05)
+                tube_ext = tube_conformal_map(v_new, f_new, seam_strip_width=0.05)
                 tube_free = tube_ext[:len(v)]
                 row.append(np.mean(np.abs(_angular_distortion(v, f, tube_free))))
 
@@ -173,8 +180,7 @@ def run_benchmark_conformal_bend_major():
             mesh = trimesh.load(filepath)
             v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
 
-            tube0_fixed = initial_tube(v, f)
-            tube_fixed = tube_conformal_map(tube0_fixed, f, v, seam_strip_width=0.05)
+            tube_fixed = tube_conformal_map(v, f, seam_strip_width=0.05)
             dist_tube = np.mean(np.abs(_angular_distortion(v, f, tube_fixed)))
             R_max = np.sqrt(1 + (2*np.pi / (np.max(tube_fixed[:,2]) - np.min(tube_fixed[:,2])))**2)
 
@@ -211,8 +217,7 @@ def run_benchmark_conformal_bend_minor():
             mesh = trimesh.load(filepath)
             v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
 
-            tube0_fixed = initial_tube(v, f)
-            tube_fixed = tube_conformal_map(tube0_fixed, f, v, seam_strip_width=0.05)
+            tube_fixed = tube_conformal_map(v, f, seam_strip_width=0.05)
             dist_tube = np.mean(np.abs(_angular_distortion(v, f, tube_fixed)))
             R_min = np.sqrt(1 + ((np.max(tube_fixed[:,2]) - np.min(tube_fixed[:,2]))/(2*np.pi))**2)
 
@@ -235,7 +240,20 @@ def run_benchmark_conformal_bend_minor():
 def run_benchmark_computation_time():
     out_dir = Path('benchmark_results/computation_time_results')
     out_dir.mkdir(exist_ok=True)
-    header = ['name', 'vertices', 'faces', 'total time', 'raw_ext_time', 'smooth_time', 'init_time', 'correction_time', 'restriction_time', 'bend_major_time', 'bend_minor_time']
+    header = [
+        'name',
+        'vertices',
+        'faces',
+        'total time',
+        'raw_ext_time',
+        'smooth_time',
+        'init_time',
+        'seam_correction_time',
+        'interior_refinement_time',
+        'restriction_time',
+        'bend_major_time',
+        'bend_minor_time',
+    ]
 
     for data_type in ['synthetic', 'real_single', 'real_multi']:
         files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
@@ -257,27 +275,43 @@ def run_benchmark_computation_time():
             time2 = time.time()
             tube0_ext = initial_tube(v_ext, f_ext)
             time3 = time.time()
-            tube_ext = tube_conformal_map(tube0_ext, f_ext, v_ext)
+            tube_seam_ext = seam_correction(tube0_ext, f_ext, v_ext)
             time4 = time.time()
-            tube_free = tube_ext[:len(v)]
+            tube_ext = interior_refinement(tube_seam_ext, f_ext, v_ext)
             time5 = time.time()
+            tube_free = tube_ext[:len(v)]
+            time6 = time.time()
             R_max = np.sqrt(1 + (2*np.pi / (np.max(tube_free[:,2]) - np.min(tube_free[:,2])))**2)
             bent_major = conformal_bend_major(tube_free, 0.5*R_max + 0.5)
-            time6 = time.time()
+            time7 = time.time()
             R_min = np.sqrt(1 + ((np.max(tube_free[:,2]) - np.min(tube_free[:,2]))/(2*np.pi))**2)
             bent_minor = conformal_bend_minor(tube_free, 2*R_min)
-            time7 = time.time()
+            time8 = time.time()
 
-            total_time = time7 - time0
+            total_time = time8 - time0
             time_raw_ext = time1 - time0
             time_smooth = time2 - time1
             time_init = time3 - time2
-            time_correction = time4 - time3
-            time_restric = time5 - time4
-            time_bend_major = time6 - time5
-            time_bend_minor = time7 - time6
+            time_seam_correction = time4 - time3
+            time_interior_refinement = time5 - time4
+            time_restric = time6 - time5
+            time_bend_major = time7 - time6
+            time_bend_minor = time8 - time7
 
-            row = [filepath.name, num_v, num_f, total_time, time_raw_ext, time_smooth, time_init, time_correction, time_restric, time_bend_major, time_bend_minor]
+            row = [
+                filepath.name,
+                num_v,
+                num_f,
+                total_time,
+                time_raw_ext,
+                time_smooth,
+                time_init,
+                time_seam_correction,
+                time_interior_refinement,
+                time_restric,
+                time_bend_major,
+                time_bend_minor,
+            ]
             results.append(row)
 
         with open(out_dir / f'{data_type}_computation_time_results.csv', 'w', newline='') as f:
