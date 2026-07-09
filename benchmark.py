@@ -16,6 +16,10 @@ from src import (
 
 
 def main():
+    print("Running benchmark for fixed boundary ablation...")
+    # run_benchmark_fixed_ablation()
+    print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
+    
     print("Running benchmark for fixed boundary correction...")
     # run_benchmark_fixed()
     print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
@@ -81,6 +85,47 @@ def run_benchmark_fixed():
             results.append(row)
 
         with open(out_dir / f'{data_type}_fixed_results.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(results)
+
+    return None
+
+
+def run_benchmark_fixed_ablation(seam_strip_width: float = 0.05):
+    out_dir = Path('benchmark_results/fixed_results')
+    out_dir.mkdir(exist_ok=True)
+    header = [
+        'name',
+        'initial_tube',
+        'after_seam_correction',
+        'after_interior_refinement',
+    ]
+
+    for data_type in ['synthetic', 'real_single', 'real_multi']:
+        files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
+        results = []
+        n = 0
+
+        for filepath in files:
+            n = n + 1
+            print(f"Processing {filepath} ({n}/{len(files)})...")
+            mesh = trimesh.load(filepath)
+            v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
+
+            tube0 = initial_tube(v, f)
+            tube_seam = seam_correction(tube0, f, v, seam_strip_width=seam_strip_width)
+            tube_full = interior_refinement(tube_seam, f, v)
+
+            row = [
+                filepath.name,
+                _mean_abs_angular_distortion(v, f, tube0),
+                _mean_abs_angular_distortion(v, f, tube_seam),
+                _mean_abs_angular_distortion(v, f, tube_full),
+            ]
+            results.append(row)
+
+        with open(out_dir / f'{data_type}_fixed_ablation_results.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(header)
             writer.writerows(results)
