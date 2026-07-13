@@ -238,7 +238,7 @@ def run_benchmark_geometric_fit():
                     para_original[:, 0],
                 ]
             )
-            corrected = seam_correction(initial, f, v, seam_strip_width=0.05)
+            corrected = seam_correction(initial, f, v, seam_strip_width=0.20)
             annulus = np.column_stack(
                 [
                     np.exp(corrected[:, 2]) * corrected[:, 0],
