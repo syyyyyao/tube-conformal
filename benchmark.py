@@ -23,19 +23,19 @@ from src.slice_mesh import slice_mesh
 def main():
 
     print("Running benchmark for correction width...")
-    # run_benchmark_correction_width()
+    run_benchmark_correction_width()
     print("Benchmark completed. Results saved to 'benchmark_results/parameter_results'.\n")
 
     print("Running benchmark for smoothed weight...")
-    # run_benchmark_smoothed_weight()
+    run_benchmark_smoothed_weight()
     print("Benchmark completed. Results saved to 'benchmark_results/parameter_results'.\n")
 
     print("Running benchmark for extension layers...")
-    # run_benchmark_extension_layers()
+    run_benchmark_extension_layers()
     print("Benchmark completed. Results saved to 'benchmark_results/parameter_results'.\n")
 
     print("Running benchmark for fixed boundary ablation...")
-    # run_benchmark_ablation()
+    run_benchmark_ablation()
     print("Benchmark completed. Results saved to 'benchmark_results/ablation_results'.\n")
 
     print("Running benchmark for geometric fit...")
@@ -210,7 +210,7 @@ def run_benchmark_geometric_fit():
     geometry_names = ["parallelogram", "annulus", "tube", "major", "minor"]
     header = ["name"]
     for name in geometry_names:
-        header.extend([f"{name}_angular", f"{name}_area"])
+        header.extend([f"{name}_angular", f"{name}_area_rms"])
 
     for data_type in ["synthetic", "real_single", "real_multi"]:
         files = sorted(Path(f"data/{data_type}").rglob("*.obj"))
@@ -261,7 +261,7 @@ def run_benchmark_geometric_fit():
                 row.extend(
                     [
                         _mean_abs_angular_distortion(reference, faces, mapped),
-                        _mean_abs_area_distortion(reference, faces, mapped),
+                        _rms_area_distortion(reference, faces, mapped),
                     ]
                 )
             results.append(row)
@@ -304,17 +304,19 @@ def _mean_abs_angular_distortion(
     return float(np.mean(np.abs(distortion)))
 
 
-def _mean_abs_area_distortion(
+def _rms_area_distortion(
     v: np.ndarray,
     f: np.ndarray,
     vmap: np.ndarray,
 ) -> float:
-    """Return the mean absolute normalized log-area distortion."""
+    """Return the RMS normalized log-area distortion."""
     distortion = area_distortion(v, f, vmap)
+    if np.any(np.isinf(distortion)):
+        return float("inf")
     distortion = distortion[np.isfinite(distortion)]
     if len(distortion) == 0:
         return float("nan")
-    return float(np.mean(np.abs(distortion)))
+    return float(np.sqrt(np.mean(distortion**2)))
 
 
 if __name__ == "__main__":

@@ -209,16 +209,12 @@ def _validate_optimization_mesh(
 
 
 def _area_distortion_energy(v: np.ndarray, f: np.ndarray, vmap: np.ndarray) -> float:
-    area_v = face_area(v, f)
-    area_map = face_area(vmap, f)
-    scale = max(float(np.max(area_v)), 1.0)
-    valid = area_v > np.finfo(float).eps * scale
-    if not np.any(valid) or np.any(area_map[valid] <= 0.0):
+    distortion = area_distortion(v, f, vmap)
+    if np.any(np.isinf(distortion)):
         return np.inf
-    distortion = np.log(
-        (area_map[valid] / np.sum(area_map[valid]))
-        / (area_v[valid] / np.sum(area_v[valid]))
-    )
+    distortion = distortion[np.isfinite(distortion)]
+    if len(distortion) == 0:
+        return np.inf
     return float(np.mean(distortion**2))
 
 
@@ -226,15 +222,22 @@ def area_distortion(v: np.ndarray, f: np.ndarray, vmap: np.ndarray) -> np.ndarra
     """Return normalized log-area distortion for every nondegenerate face."""
     area_v = face_area(v, f)
     area_map = face_area(vmap, f)
-    valid = (area_v > 0.0) & (area_map > 0.0)
-    distortion = np.full(len(f), np.inf, dtype=float)
-    if not np.any(valid):
+    scale = max(float(np.max(area_v)), 1.0)
+    valid_reference = area_v > np.finfo(float).eps * scale
+    distortion = np.full(len(f), np.nan, dtype=float)
+    if not np.any(valid_reference):
         return distortion
 
-    total_v = np.sum(area_v[valid])
-    total_map = np.sum(area_map[valid])
-    distortion[valid] = np.log(
-        (area_map[valid] / total_map) / (area_v[valid] / total_v)
+    valid_map = valid_reference & (area_map > 0.0)
+    distortion[valid_reference & ~valid_map] = np.inf
+    total_v = np.sum(area_v[valid_reference])
+    total_map = np.sum(area_map[valid_reference])
+    if total_map <= 0.0:
+        distortion[valid_reference] = np.inf
+        return distortion
+
+    distortion[valid_map] = np.log(
+        (area_map[valid_map] / total_map) / (area_v[valid_map] / total_v)
     )
     return distortion
 
