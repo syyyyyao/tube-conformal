@@ -101,6 +101,11 @@ bent_major = conformal_bend_major(tube, R=0.5 * R_major_max + 0.5)
 
 R_minor_min = np.sqrt(1 + (height / (2 * np.pi)) ** 2)
 bent_minor = conformal_bend_minor(tube, R=2.0 * R_minor_min)
+
+# Or choose both the radius and the starting position automatically by
+# minimizing normalized log-area distortion against the original mesh.
+bent_major_auto = conformal_bend_major(tube, f=f, v=v)
+bent_minor_auto = conformal_bend_minor(tube, f=f, v=v)
 ```
 
 ## Benchmarks
@@ -117,8 +122,7 @@ Generated result groups:
 
 - `fixed_results/`: fixed-boundary correction with different seam strip widths
 - `free_results/`: boundary extension layers and smoothing weight experiments
-- `conformal_bend_results/`: major-axis and minor-axis conformal bending experiments
-- `computation_time_results/`: runtime breakdown for each pipeline stage
+- `geometric_fit_results/`: angular and area distortion for the straight-boundary parallelogram, corrected annulus, tube, major bend, and minor bend
 
 The full benchmark may take a while. For quick debugging, reduce the file list or parameter grids inside `benchmark.py`.
 
@@ -148,9 +152,9 @@ Adds one outward ring of vertices along each boundary loop and stitches the new 
 
 Smooths the extended boundary rings to reduce local irregularity introduced by raw boundary extension.
 
-### `conformal_bend_major(tube, R)` / `conformal_bend_minor(tube, R)`
+### `conformal_bend_major(tube, R=None, f=None, v=None)` / `conformal_bend_minor(tube, R=None, f=None, v=None)`
 
-Applies conformal bending to a tubular map along the major or minor direction. `R` is the bending radius and should satisfy the radius constraints implied by the formulas used in `src/conformal_bend.py`.
+Applies conformal bending to a tubular map along the major or minor direction. Passing `R` uses that radius and preserves the original centered behavior. If `R` is omitted, `f` and the original vertices `v` are required; the function automatically optimizes `R` together with the axial starting position (major bend) or circumferential starting position (minor bend) using normalized log-area distortion.
 
 ## Input Requirements and Notes
 

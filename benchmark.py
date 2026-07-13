@@ -1,8 +1,9 @@
-import numpy as np
-import trimesh
-import time
 import csv
 from pathlib import Path
+
+import numpy as np
+import trimesh
+
 from src import (
     initial_tube,
     seam_correction,
@@ -12,38 +13,34 @@ from src import (
     ring_smooth,
     conformal_bend_major,
     conformal_bend_minor,
+    cut_path_finder,
 )
+from src.conformal_bend import area_distortion
+from src.parallelogram_conformal_map import parallelogram_conformal_map
+from src.slice_mesh import slice_mesh
 
 
 def main():
 
     print("Running benchmark for correction width...")
     # run_benchmark_correction_width()
-    print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
+    print("Benchmark completed. Results saved to 'benchmark_results/parameter_results'.\n")
 
     print("Running benchmark for smoothed weight...")
     # run_benchmark_smoothed_weight()
-    print("Benchmark completed. Results saved to 'benchmark_results/free_results'.\n")
+    print("Benchmark completed. Results saved to 'benchmark_results/parameter_results'.\n")
 
     print("Running benchmark for extension layers...")
     # run_benchmark_extension_layers()
-    print("Benchmark completed. Results saved to 'benchmark_results/free_results'.\n")
+    print("Benchmark completed. Results saved to 'benchmark_results/parameter_results'.\n")
 
     print("Running benchmark for fixed boundary ablation...")
-    run_benchmark_ablation()
-    print("Benchmark completed. Results saved to 'benchmark_results/fixed_results'.\n")
+    # run_benchmark_ablation()
+    print("Benchmark completed. Results saved to 'benchmark_results/ablation_results'.\n")
 
-    print("Running benchmark for major conformal bending...")
-    # run_benchmark_conformal_bend_major()
-    print("Benchmark completed. Results saved to 'benchmark_results/conformal_bend_results'.\n")
-
-    print("Running benchmark for minor conformal bending...")
-    # run_benchmark_conformal_bend_minor()
-    print("Benchmark completed. Results saved to 'benchmark_results/conformal_bend_results'.\n")
-
-    print("Running benchmark for computation time...")
-    # run_benchmark_computation_time()
-    print("Benchmark completed. Results saved to ‘benchmark_results/computation_time_results’.\n")
+    print("Running benchmark for geometric fit...")
+    run_benchmark_geometric_fit()
+    print("Benchmark completed. Results saved to 'benchmark_results/geometric_fit_results'.\n")
 
 
 def run_benchmark_correction_width():
@@ -103,14 +100,14 @@ def run_benchmark_smoothed_weight():
             v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
             tube_ext_raw = tube_conformal_map(v_ext_raw, f_ext, seam_strip_width=0.20)
             tube_raw = tube_ext_raw[:len(v)]
-            dist_raw = np.mean(np.abs(_angular_distortion(v, f, tube_raw)))
+            dist_raw = _mean_abs_angular_distortion(v, f, tube_raw)
 
             row = [filepath.name, dist_raw]
             for w in smooth_weights:
                 v_smooth = ring_smooth(v_ext_raw, f_ext, smooth_weight=w)
                 tube_ext = tube_conformal_map(v_smooth, f_ext, seam_strip_width=0.20)
                 tube_free = tube_ext[:len(v)]
-                row.append(np.mean(np.abs(_angular_distortion(v, f, tube_free))))
+                row.append(_mean_abs_angular_distortion(v, f, tube_free))
 
             results.append(row)
 
@@ -147,7 +144,7 @@ def run_benchmark_extension_layers():
                 v_current, f_current = v_new, f_new
                 tube_ext = tube_conformal_map(v_new, f_new, seam_strip_width=0.20)
                 tube_free = tube_ext[:len(v)]
-                row.append(np.mean(np.abs(_angular_distortion(v, f, tube_free))))
+                row.append(_mean_abs_angular_distortion(v, f, tube_free))
 
             results.append(row)
 
@@ -159,7 +156,7 @@ def run_benchmark_extension_layers():
 
 
 def run_benchmark_ablation():
-    out_dir = Path('benchmark_results/fixed_results')
+    out_dir = Path('benchmark_results/ablation_results')
     out_dir.mkdir(exist_ok=True)
     header = [
         'name',
@@ -198,7 +195,7 @@ def run_benchmark_ablation():
             ]
             results.append(row)
 
-        with open(out_dir / f'{data_type}_fixed_ablation_results.csv', 'w', newline='') as f:
+        with open(out_dir / f'{data_type}_ablation_results.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(header)
             writer.writerows(results)
@@ -206,163 +203,74 @@ def run_benchmark_ablation():
     return None
 
 
-def run_benchmark_conformal_bend_major():
-    out_dir = Path('benchmark_results/conformal_bend_results')
-    out_dir.mkdir(exist_ok=True)
-    major_ratios = [0.01, 0.1, 0.20, 0.40, 0.60, 0.80, 0.99]
-    header = ['name', 'tube'] + [f'ratio={a}' for a in major_ratios]
+def run_benchmark_geometric_fit():
+    """Compare distortion across planar, tubular, and bent geometries."""
+    out_dir = Path("benchmark_results/geometric_fit_results")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    geometry_names = ["parallelogram", "annulus", "tube", "major", "minor"]
+    header = ["name"]
+    for name in geometry_names:
+        header.extend([f"{name}_angular", f"{name}_area"])
 
-    for data_type in ['synthetic', 'real']:
-        files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
+    for data_type in ["synthetic", "real_single", "real_multi"]:
+        files = sorted(Path(f"data/{data_type}").rglob("*.obj"))
         results = []
-        n = 0
 
-        for filepath in files:
-            n = n + 1
-            print(f"Processing {filepath} ({n}/{len(files)})...")
+        for index, filepath in enumerate(files, start=1):
+            print(f"Processing {filepath} ({index}/{len(files)})...")
             mesh = trimesh.load(filepath)
-            v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
+            v = np.asarray(mesh.vertices)
+            f = np.asarray(mesh.faces)
 
-            tube_fixed = tube_conformal_map(v, f, seam_strip_width=0.05)
-            dist_tube = np.mean(np.abs(_angular_distortion(v, f, tube_fixed)))
-            R_max = np.sqrt(1 + (2*np.pi / (np.max(tube_fixed[:,2]) - np.min(tube_fixed[:,2])))**2)
+            cut_path = cut_path_finder(v, f)
+            v_sliced, f_sliced = slice_mesh(v, f, cut_path)
+            corner = np.array(
+                [cut_path[0], cut_path[-1], len(v) + len(cut_path) - 1, len(v)],
+                dtype=np.int64,
+            )
+            parallelogram = parallelogram_conformal_map(v_sliced, f_sliced, corner)
 
-            row = [filepath.name, dist_tube]
-            for a in major_ratios:
-                R_major = a * R_max + 1-a
-                bent_major = conformal_bend_major(tube_fixed, R_major)
-                row.append(np.mean(np.abs(_angular_distortion(v, f, bent_major))))
+            para_original = parallelogram[: len(v)]
+            initial = np.column_stack(
+                [
+                    np.cos(para_original[:, 1]),
+                    np.sin(para_original[:, 1]),
+                    para_original[:, 0],
+                ]
+            )
+            corrected = seam_correction(initial, f, v, seam_strip_width=0.05)
+            annulus = np.column_stack(
+                [
+                    np.exp(corrected[:, 2]) * corrected[:, 0],
+                    np.exp(corrected[:, 2]) * corrected[:, 1],
+                ]
+            )
+            tube = interior_refinement(corrected, f, v)
+            major = conformal_bend_major(tube, f=f, v=v)
+            minor = conformal_bend_minor(tube, f=f, v=v)
 
-            results.append(row)
-
-        with open(out_dir / f'{data_type}_conformal_bend_major_results.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(header)
-            writer.writerows(results)
-
-    return None
-
-
-def run_benchmark_conformal_bend_minor():
-    out_dir = Path('benchmark_results/conformal_bend_results')
-    out_dir.mkdir(exist_ok=True)
-    minor_ratios = [1.01, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
-    header = ['name', 'tube'] + [f'ratio={a}' for a in minor_ratios]
-
-    for data_type in ['synthetic', 'real_single', 'real_multi']:
-        files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
-        results = []
-        n = 0
-
-        for filepath in files:
-            n = n + 1
-            print(f"Processing {filepath} ({n}/{len(files)})...")
-            mesh = trimesh.load(filepath)
-            v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
-
-            tube_fixed = tube_conformal_map(v, f, seam_strip_width=0.05)
-            dist_tube = np.mean(np.abs(_angular_distortion(v, f, tube_fixed)))
-            R_min = np.sqrt(1 + ((np.max(tube_fixed[:,2]) - np.min(tube_fixed[:,2]))/(2*np.pi))**2)
-
-            row = [filepath.name, dist_tube]
-            for a in minor_ratios:
-                R_minor = a * R_min
-                bent_minor = conformal_bend_minor(tube_fixed, R_minor)
-                row.append(np.mean(np.abs(_angular_distortion(v, f, bent_minor))))
-
-            results.append(row)
-
-        with open(out_dir / f'{data_type}_conformal_bend_minor_results.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(header)
-            writer.writerows(results)
-            
-    return None
-
-
-def run_benchmark_computation_time():
-    out_dir = Path('benchmark_results/computation_time_results')
-    out_dir.mkdir(exist_ok=True)
-    header = [
-        'name',
-        'vertices',
-        'faces',
-        'total time',
-        'raw_ext_time',
-        'smooth_time',
-        'init_time',
-        'seam_correction_time',
-        'interior_refinement_time',
-        'restriction_time',
-        'bend_major_time',
-        'bend_minor_time',
-    ]
-
-    for data_type in ['synthetic', 'real_single', 'real_multi']:
-        files = sorted(Path(f'data/{data_type}').rglob("*.obj"))
-        results = []
-        n = 0
-
-        for filepath in files:
-            n = n + 1
-            print(f"Processing {filepath} ({n}/{len(files)})...")
-            mesh = trimesh.load(filepath)
-            v, f = np.asarray(mesh.vertices), np.asarray(mesh.faces)
-            num_v = v.shape[0]
-            num_f = f.shape[0]
-
-            time0 = time.time()
-            v_ext_raw, f_ext = raw_extension(v, f, normal_blend=0.15)
-            time1 = time.time()
-            v_ext = ring_smooth(v_ext_raw, f_ext, smooth_weight=0.5)
-            time2 = time.time()
-            tube0_ext = initial_tube(v_ext, f_ext)
-            time3 = time.time()
-            tube_seam_ext = seam_correction(tube0_ext, f_ext, v_ext)
-            time4 = time.time()
-            tube_ext = interior_refinement(tube_seam_ext, f_ext, v_ext)
-            time5 = time.time()
-            tube_free = tube_ext[:len(v)]
-            time6 = time.time()
-            R_max = np.sqrt(1 + (2*np.pi / (np.max(tube_free[:,2]) - np.min(tube_free[:,2])))**2)
-            bent_major = conformal_bend_major(tube_free, 0.5*R_max + 0.5)
-            time7 = time.time()
-            R_min = np.sqrt(1 + ((np.max(tube_free[:,2]) - np.min(tube_free[:,2]))/(2*np.pi))**2)
-            bent_minor = conformal_bend_minor(tube_free, 2*R_min)
-            time8 = time.time()
-
-            total_time = time8 - time0
-            time_raw_ext = time1 - time0
-            time_smooth = time2 - time1
-            time_init = time3 - time2
-            time_seam_correction = time4 - time3
-            time_interior_refinement = time5 - time4
-            time_restric = time6 - time5
-            time_bend_major = time7 - time6
-            time_bend_minor = time8 - time7
-
-            row = [
-                filepath.name,
-                num_v,
-                num_f,
-                total_time,
-                time_raw_ext,
-                time_smooth,
-                time_init,
-                time_seam_correction,
-                time_interior_refinement,
-                time_restric,
-                time_bend_major,
-                time_bend_minor,
+            geometries = [
+                (v_sliced, f_sliced, parallelogram),
+                (v, f, annulus),
+                (v, f, tube),
+                (v, f, major),
+                (v, f, minor),
             ]
+            row = [filepath.name]
+            for reference, faces, mapped in geometries:
+                row.extend(
+                    [
+                        _mean_abs_angular_distortion(reference, faces, mapped),
+                        _mean_abs_area_distortion(reference, faces, mapped),
+                    ]
+                )
             results.append(row)
 
-        with open(out_dir / f'{data_type}_computation_time_results.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
+        output = out_dir / f"{data_type}_geometric_fit_results.csv"
+        with open(output, "w", newline="") as file:
+            writer = csv.writer(file)
             writer.writerow(header)
             writer.writerows(results)
-
-    return None
 
 
 def _mean_abs_angular_distortion(
@@ -371,90 +279,42 @@ def _mean_abs_angular_distortion(
     vmap: np.ndarray,
     face_mask: np.ndarray | None = None,
 ) -> float:
-    distortion = _angular_distortion(v, f, vmap)
+    """Return the mean absolute corner-angle distortion in degrees."""
+    v = np.asarray(v, dtype=float)
+    f = np.asarray(f, dtype=np.int64)
+    vmap = np.asarray(vmap, dtype=float)
 
-    if face_mask is None:
-        return float(np.mean(np.abs(distortion)))
+    def triangle_angles(vertices: np.ndarray) -> np.ndarray:
+        triangles = vertices[f]
+        edge_next = np.roll(triangles, -1, axis=1) - triangles
+        edge_prev = np.roll(triangles, 1, axis=1) - triangles
+        cosine = np.sum(edge_next * edge_prev, axis=2) / (
+            np.linalg.norm(edge_next, axis=2)
+            * np.linalg.norm(edge_prev, axis=2)
+        )
+        return np.arccos(np.clip(cosine, -1.0, 1.0))
 
-    face_mask = np.asarray(face_mask, dtype=bool)
-    if not np.any(face_mask):
-        return float('nan')
+    distortion = np.rad2deg(triangle_angles(vmap) - triangle_angles(v))
+    if face_mask is not None:
+        face_mask = np.asarray(face_mask, dtype=bool)
+        if not np.any(face_mask):
+            return float("nan")
+        distortion = distortion[face_mask]
 
-    nf = len(f)
-    masked_distortion = np.concatenate([
-        distortion[:nf][face_mask],
-        distortion[nf:2 * nf][face_mask],
-        distortion[2 * nf:][face_mask],
-    ])
-    return float(np.mean(np.abs(masked_distortion)))
+    return float(np.mean(np.abs(distortion)))
 
 
-def _angular_distortion(v: np.ndarray, f: np.ndarray, vmap: np.ndarray) -> np.ndarray:
-    """
-    Compute the angle distortion (in degree) of a mapping.
-    
-    Arguments:
-    ----------
-    v: nv x 3 or nv x 2 numpy array
-       vertex coordinates
-    f: nf x 3 numpy array
-       triangular connectivity of mesh, 0-indexed
-    vmap: nv x 3 or nv x 2 numpy array
-          vertex coordinates of the mapping
-    
-    Returns:
-    --------
-    distortion: 3*nf x 1 numpy array
-                angle distortion
-    """
-    
-    f1 = f[:, 0]
-    f2 = f[:, 1]
-    f3 = f[:, 2]
-
-    if np.size(v,1) == 2:
-        v = np.hstack([v, np.zeros((len(v),1))])
-        
-    if np.size(vmap,1) == 2:
-        vmap = np.hstack([vmap, np.zeros((len(vmap),1))])
-
-    # calculate angles on v
-    
-    a3 = v[f1,:] - v[f3,:]
-    b3 = v[f2,:] - v[f3,:]
-    a1 = v[f2,:] - v[f1,:]
-    b1 = v[f3,:] - v[f1,:]
-    a2 = v[f3,:] - v[f2,:]
-    b2 = v[f1,:] - v[f2,:]
-    
-    vcos1 = (a1[:,0]*b1[:,0]+a1[:,1]*b1[:,1]+a1[:,2]*b1[:,2])/np.sqrt(a1[:,0]**2+a1[:,1]**2+a1[:,2]**2)/np.sqrt(b1[:,0]**2+b1[:,1]**2+b1[:,2]**2)
-    vcos2 = (a2[:,0]*b2[:,0]+a2[:,1]*b2[:,1]+a2[:,2]*b2[:,2])/np.sqrt(a2[:,0]**2+a2[:,1]**2+a2[:,2]**2)/np.sqrt(b2[:,0]**2+b2[:,1]**2+b2[:,2]**2)
-    vcos3 = (a3[:,0]*b3[:,0]+a3[:,1]*b3[:,1]+a3[:,2]*b3[:,2])/np.sqrt(a3[:,0]**2+a3[:,1]**2+a3[:,2]**2)/np.sqrt(b3[:,0]**2+b3[:,1]**2+b3[:,2]**2)
-
-    # calculate angles on vmap
-    c3 = vmap[f1,:] - vmap[f3,:]
-    d3 = vmap[f2,:] - vmap[f3,:]
-    c1 = vmap[f2,:] - vmap[f1,:]
-    d1 = vmap[f3,:] - vmap[f1,:]
-    c2 = vmap[f3,:] - vmap[f2,:]
-    d2 = vmap[f1,:] - vmap[f2,:]
-    
-    mapcos1 = (c1[:,0]*d1[:,0]+c1[:,1]*d1[:,1]+c1[:,2]*d1[:,2])/np.sqrt(c1[:,0]**2+c1[:,1]**2+c1[:,2]**2)/np.sqrt(d1[:,0]**2+d1[:,1]**2+d1[:,2]**2)
-    mapcos2 = (c2[:,0]*d2[:,0]+c2[:,1]*d2[:,1]+c2[:,2]*d2[:,2])/np.sqrt(c2[:,0]**2+c2[:,1]**2+c2[:,2]**2)/np.sqrt(d2[:,0]**2+d2[:,1]**2+d2[:,2]**2)
-    mapcos3 = (c3[:,0]*d3[:,0]+c3[:,1]*d3[:,1]+c3[:,2]*d3[:,2])/np.sqrt(c3[:,0]**2+c3[:,1]**2+c3[:,2]**2)/np.sqrt(d3[:,0]**2+d3[:,1]**2+d3[:,2]**2)
-
-    # clamp to [-1, 1] to avoid arccos nan from floating point error
-    vcos1 = np.clip(vcos1, -1, 1)
-    vcos2 = np.clip(vcos2, -1, 1)
-    vcos3 = np.clip(vcos3, -1, 1)
-    mapcos1 = np.clip(mapcos1, -1, 1)
-    mapcos2 = np.clip(mapcos2, -1, 1)
-    mapcos3 = np.clip(mapcos3, -1, 1)
-
-    # calculate the angle difference
-    angular_distortion = np.hstack((np.arccos(mapcos1) - np.arccos(vcos1), np.arccos(mapcos2) - np.arccos(vcos2), np.arccos(mapcos3) - np.arccos(vcos3))) * 180 / np.pi
-
-    return angular_distortion
+def _mean_abs_area_distortion(
+    v: np.ndarray,
+    f: np.ndarray,
+    vmap: np.ndarray,
+) -> float:
+    """Return the mean absolute normalized log-area distortion."""
+    distortion = area_distortion(v, f, vmap)
+    distortion = distortion[np.isfinite(distortion)]
+    if len(distortion) == 0:
+        return float("nan")
+    return float(np.mean(np.abs(distortion)))
 
 
 if __name__ == "__main__":
