@@ -239,13 +239,13 @@ def run_benchmark_geometric_fit():
                 ]
             )
             corrected = seam_correction(initial, f, v, seam_strip_width=0.20)
+            tube = interior_refinement(corrected, f, v)
             annulus = np.column_stack(
                 [
-                    np.exp(corrected[:, 2]) * corrected[:, 0],
-                    np.exp(corrected[:, 2]) * corrected[:, 1],
+                    np.exp(tube[:, 2]) * tube[:, 0],
+                    np.exp(tube[:, 2]) * tube[:, 1],
                 ]
             )
-            tube = interior_refinement(corrected, f, v)
             major = conformal_bend_major(tube, f=f, v=v)
             minor = conformal_bend_minor(tube, f=f, v=v)
 
