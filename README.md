@@ -1,7 +1,7 @@
 # tube-conformal
 
 <p align="center">
-  <img src="assets/teaser.png" alt="Tube conformal mapping teaser" width="900">
+  <img src="assets/teaser.jpg" alt="Tube conformal mapping teaser" width="900">
 </p>
 
 `tube-conformal` is a Python implementation for conformal parameterization and conformal bending of tubular triangular meshes. It maps tube-topology surfaces with two boundary loops to tubular coordinates, and includes boundary extension, ring smoothing, seam-local quasi-conformal correction, and major/minor conformal bending utilities.
